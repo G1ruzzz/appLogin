@@ -1,0 +1,13 @@
+{
+    frankenphp
+    admin off
+}
+
+:8080 {
+    root * /app
+    encode gzip
+
+    route {
+        php_server
+    }
+}
