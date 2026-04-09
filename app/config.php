@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 function getDB(): PDO {
     static $pdo = null;
-    if ($pdo !== null) return $pdo;   // reutilizar conexión dentro de la misma petición
+    if ($pdo !== null) return $pdo;
 
     $dsn = sprintf(
         'mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
@@ -34,6 +34,10 @@ function getDB(): PDO {
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES   => false,
         ]);
+
+        // 👇 agregado
+        echo json_encode(['message' => 'Conexión exitosa'], JSON_UNESCAPED_UNICODE);
+
         return $pdo;
     } catch (PDOException $e) {
         json_response(['error' => 'Error de base de datos'], 500);
