@@ -2,19 +2,15 @@
 // Obtener la URL de conexión de Railway
 $databaseUrl = getenv('MYSQL_URL');
 
-if (!$databaseUrl) {
-    die("Error: MYSQL_URL no está definida");
-}
-
 // Separar la URL
 $parts = parse_url($databaseUrl);
 
-// Datos de conexión
-$host = $parts['host'];
-$user = $parts['user'];
-$pass = $parts['pass'];
-$db   = ltrim($parts['path'], '/');
-$port = $parts['port'];
+// Datos de conexión (FORZADOS con los de tu imagen)
+$host = "mysql.railway.internal";
+$user = "root";
+$pass = "TZUpVXtPdCeXaSvmqxqFowbDbqnTwzXN";
+$db   = "railway";
+$port = 3306;
 
 // Crear conexión
 $conn = new mysqli($host, $user, $pass, $db, $port);
