@@ -1,11 +1,5 @@
 <?php
 
-define('DB_HOST',     getenv('MYSQLHOST'));
-define('DB_PORT',     getenv('MYSQLPORT')     ?: '3306');
-define('DB_NAME',     getenv('MYSQLDATABASE') ?: getenv('MYSQL_DATABASE'));
-define('DB_USER',     getenv('MYSQLUSER'));
-define('DB_PASSWORD', getenv('MYSQLPASSWORD'));
-
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
@@ -16,14 +10,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+// ─── Leer variable de cualquier fuente ───────────────────────
+function env(string $key): string {
+    return getenv($key) ?: ($_ENV[$key] ?? $_SERVER[$key] ?? '');
+}
+
+// ─── OPCIÓN A: variables individuales (MySQL plugin Railway) ──
+$host = env('MYSQLHOST');
+$port = env('MYSQLPORT') ?: '3306';
+$name = env('MYSQLDATABASE') ?: env('MYSQL_DATABASE');
+$user = env('MYSQLUSER');
+$pass = env('MYSQLPASSWORD');
+
+// ─── OPCIÓN B: URL completa (Railway a veces la manda así) ────
+if (empty($host)) {
+    $url = env('MYSQL_URL')
+        ?: env('MYSQL_PRIVATE_URL')
+        ?: env('DATABASE_URL')
+        ?: '';
+
+    if (!empty($url)) {
+        $p    = parse_url($url);
+        $host = $p['host'] ?? '';
+        $port = $p['port'] ?? '3306';
+        $name = ltrim($p['path'] ?? '', '/');
+        $user = $p['user'] ?? '';
+        $pass = $p['pass'] ?? '';
+    }
+}
+
+define('DB_HOST',     $host);
+define('DB_PORT',     (string)$port);
+define('DB_NAME',     $name);
+define('DB_USER',     $user);
+define('DB_PASSWORD', $pass);
+
+// ─── Conexión PDO ─────────────────────────────────────────────
 function getDB(): PDO {
     static $pdo = null;
     if ($pdo !== null) return $pdo;
+
+    // Si no hay host, devuelve diagnóstico para saber qué llegó
+    if (empty(DB_HOST) || empty(DB_NAME)) {
+        http_response_code(500);
+        echo json_encode([
+            'error'  => 'Variables de entorno no encontradas',
+            'host'   => DB_HOST,
+            'db'     => DB_NAME,
+            'user'   => DB_USER,
+            'port'   => DB_PORT,
+        ]);
+        exit;
+    }
 
     $dsn = sprintf(
         'mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
         DB_HOST, DB_PORT, DB_NAME
     );
+
     try {
         $pdo = new PDO($dsn, DB_USER, DB_PASSWORD, [
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
@@ -32,7 +76,14 @@ function getDB(): PDO {
         ]);
         return $pdo;
     } catch (PDOException $e) {
-        json_response(['error' => 'Error de base de datos: ' . $e->getMessage()], 500);
+        http_response_code(500);
+        echo json_encode([
+            'error' => 'Fallo al conectar: ' . $e->getMessage(),
+            'host'  => DB_HOST,
+            'port'  => DB_PORT,
+            'db'    => DB_NAME,
+        ]);
+        exit;
     }
 }
 
@@ -43,19 +94,5 @@ function json_response(array $data, int $code = 200): never {
 }
 
 function get_input(): array {
-    $raw = file_get_contents('php://input');
-    return json_decode($raw, true) ?? [];
-}
-
-function require_method(string ...$allowed): void {
-    if (!in_array($_SERVER['REQUEST_METHOD'], $allowed, true)) {
-        json_response(['error' => 'Método no permitido'], 405);
-    }
-}
-
-function uuid4(): string {
-    $data = random_bytes(16);
-    $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
-    $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
-    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+    return json_decode(file_get_contents('php://input'), true) ?? [];
 }
