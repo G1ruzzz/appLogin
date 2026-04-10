@@ -19,7 +19,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 function getDB(): PDO {
     static $pdo = null;
     if ($pdo !== null) return $pdo;
-    $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', DB_HOST, DB_PORT, DB_NAME);
+
+    $dsn = sprintf(
+        'mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
+        DB_HOST, DB_PORT, DB_NAME
+    );
     try {
         $pdo = new PDO($dsn, DB_USER, DB_PASSWORD, [
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
@@ -28,9 +32,7 @@ function getDB(): PDO {
         ]);
         return $pdo;
     } catch (PDOException $e) {
-        http_response_code(500);
-        echo json_encode(['error' => 'Error de base de datos']);
-        exit;
+        json_response(['error' => 'Error de base de datos: ' . $e->getMessage()], 500);
     }
 }
 
@@ -41,5 +43,19 @@ function json_response(array $data, int $code = 200): never {
 }
 
 function get_input(): array {
-    return json_decode(file_get_contents('php://input'), true) ?? [];
+    $raw = file_get_contents('php://input');
+    return json_decode($raw, true) ?? [];
+}
+
+function require_method(string ...$allowed): void {
+    if (!in_array($_SERVER['REQUEST_METHOD'], $allowed, true)) {
+        json_response(['error' => 'Método no permitido'], 405);
+    }
+}
+
+function uuid4(): string {
+    $data = random_bytes(16);
+    $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
+    $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
+    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
 }
