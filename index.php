@@ -1,81 +1,106 @@
 <?php
 require 'config.php';
 
-header('Content-Type: application/json');
-$pdo = getDB();
-
-$path = $_SERVER['REQUEST_URI'];
+$pdo    = getDB();
+$path   = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $method = $_SERVER['REQUEST_METHOD'];
+$input  = json_decode(file_get_contents("php://input"), true) ?? [];
 
-$input = json_decode(file_get_contents("php://input"), true);
-
-// ─── LOGIN ─────────────────────────────
-if (strpos($path, "/login") !== false && $method === "POST") {
-
-    $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE nombre=? AND password=?");
-    $stmt->execute([$input['nombre'], $input['password']]);
-
+// ─── LOGIN ──────────────────────────────────────────────────────────────────
+if ($path === '/login' && $method === 'POST') {
+    $stmt = $pdo->prepare("SELECT id, nombre FROM usuarios WHERE nombre=? AND password=?");
+    $stmt->execute([$input['nombre'] ?? '', $input['password'] ?? '']);
     $user = $stmt->fetch();
-
-    if ($user) {
-        echo json_encode([
-            "ok" => true,
-            "id" => $user['id'],
-            "nombre" => $user['nombre']
-        ]);
-    } else {
-        echo json_encode(["ok" => false]);
-    }
+    echo json_encode($user
+        ? ['ok' => true,  'id' => $user['id'], 'nombre' => $user['nombre']]
+        : ['ok' => false, 'error' => 'credenciales_incorrectas']
+    );
+    exit;
 }
 
-// ─── REGISTER ──────────────────────────
-if (strpos($path, "/register") !== false && $method === "POST") {
-
-    // verificar si existe
+// ─── REGISTER ───────────────────────────────────────────────────────────────
+if ($path === '/register' && $method === 'POST') {
+    $nombre   = trim($input['nombre']   ?? '');
+    $password = trim($input['password'] ?? '');
+    if ($nombre === '' || $password === '') {
+        echo json_encode(['ok' => false, 'error' => 'campos_vacios']); exit;
+    }
     $check = $pdo->prepare("SELECT id FROM usuarios WHERE nombre=?");
-    $check->execute([$input['nombre']]);
-
+    $check->execute([$nombre]);
     if ($check->fetch()) {
-        echo json_encode(["ok" => false, "error" => "nombre_en_uso"]);
-        exit;
+        echo json_encode(['ok' => false, 'error' => 'nombre_en_uso']); exit;
     }
-
-    $stmt = $pdo->prepare("INSERT INTO usuarios (id, nombre, password) VALUES (UUID(), ?, ?)");
-    $stmt->execute([$input['nombre'], $input['password']]);
-
-    echo json_encode(["ok" => true]);
+    $pdo->prepare("INSERT INTO usuarios (id, nombre, password) VALUES (UUID(),?,?)")
+        ->execute([$nombre, $password]);
+    echo json_encode(['ok' => true]);
+    exit;
 }
 
-// ─── GET USERS ─────────────────────────
-if (strpos($path, "/users") !== false && $method === "GET") {
-
-    $res = $pdo->query("SELECT id, nombre FROM usuarios");
+// ─── GET USERS ──────────────────────────────────────────────────────────────
+if ($path === '/users' && $method === 'GET') {
+    $res = $pdo->query("SELECT id, nombre FROM usuarios ORDER BY nombre ASC");
     echo json_encode($res->fetchAll());
+    exit;
 }
 
-// ─── VERIFY ADMIN ──────────────────────
-if (strpos($path, "/verify-admin") !== false && $method === "POST") {
-
-    $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE nombre='admin' AND password=?");
-    $stmt->execute([$input['password']]);
-
-    echo json_encode(["ok" => $stmt->fetch() ? true : false]);
+// ─── VERIFY ADMIN ───────────────────────────────────────────────────────────
+if ($path === '/verify-admin' && $method === 'POST') {
+    $stmt = $pdo->prepare("SELECT id FROM usuarios WHERE nombre='Admin' AND password=?");
+    $stmt->execute([$input['password'] ?? '']);
+    echo json_encode(['ok' => $stmt->fetch() ? true : false]);
+    exit;
 }
 
-// ─── VER INFO USUARIO ──────────────────
-if (strpos($path, "/admin/user-info") !== false && $method === "POST") {
-
+// ─── VER INFO USUARIO (admin) ───────────────────────────────────────────────
+if ($path === '/admin/user-info' && $method === 'POST') {
     $stmt = $pdo->prepare("SELECT nombre, password FROM usuarios WHERE id=?");
-    $stmt->execute([$input['id']]);
-
-    echo json_encode($stmt->fetch());
+    $stmt->execute([$input['id'] ?? '']);
+    echo json_encode($stmt->fetch() ?: ['error' => 'no_encontrado']);
+    exit;
 }
 
-// ─── DELETE USER ───────────────────────
-if (strpos($path, "/admin/delete-user") !== false && $method === "POST") {
-
-    $stmt = $pdo->prepare("DELETE FROM usuarios WHERE id=?");
-    $stmt->execute([$input['id']]);
-
-    echo json_encode(["ok" => true]);
+// ─── DELETE USER (admin) ────────────────────────────────────────────────────
+if ($path === '/admin/delete-user' && $method === 'POST') {
+    $pdo->prepare("DELETE FROM usuarios WHERE id=?")->execute([$input['id'] ?? '']);
+    echo json_encode(['ok' => true]);
+    exit;
 }
+
+// ─── CAMBIAR NOMBRE ─────────────────────────────────────────────────────────
+if ($path === '/change-name' && $method === 'POST') {
+    $id    = $input['id']       ?? '';
+    $pass  = $input['password'] ?? '';
+    $nuevo = trim($input['nombre'] ?? '');
+    $check = $pdo->prepare("SELECT id FROM usuarios WHERE id=? AND password=?");
+    $check->execute([$id, $pass]);
+    if (!$check->fetch()) {
+        echo json_encode(['ok' => false, 'error' => 'contrasena_incorrecta']); exit;
+    }
+    $exist = $pdo->prepare("SELECT id FROM usuarios WHERE nombre=? AND id!=?");
+    $exist->execute([$nuevo, $id]);
+    if ($exist->fetch()) {
+        echo json_encode(['ok' => false, 'error' => 'nombre_en_uso']); exit;
+    }
+    $pdo->prepare("UPDATE usuarios SET nombre=? WHERE id=?")->execute([$nuevo, $id]);
+    echo json_encode(['ok' => true, 'nombre' => $nuevo]);
+    exit;
+}
+
+// ─── CAMBIAR CONTRASEÑA ─────────────────────────────────────────────────────
+if ($path === '/change-password' && $method === 'POST') {
+    $id      = $input['id']              ?? '';
+    $actual  = $input['password_actual'] ?? '';
+    $nueva   = $input['password_nueva']  ?? '';
+    $check = $pdo->prepare("SELECT id FROM usuarios WHERE id=? AND password=?");
+    $check->execute([$id, $actual]);
+    if (!$check->fetch()) {
+        echo json_encode(['ok' => false, 'error' => 'contrasena_incorrecta']); exit;
+    }
+    $pdo->prepare("UPDATE usuarios SET password=? WHERE id=?")->execute([$nueva, $id]);
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+// ─── 404 ────────────────────────────────────────────────────────────────────
+http_response_code(404);
+echo json_encode(['error' => 'ruta_no_encontrada']);
