@@ -2,16 +2,14 @@
 require 'config.php';
 
 $pdo    = getDB();
-
-// Railway puede mandar la ruta en REQUEST_URI con o sin prefijo
-// Tomamos solo el path limpio sin query string
-$full   = $_SERVER['REQUEST_URI'] ?? '/';
-$path   = parse_url($full, PHP_URL_PATH);
-$path   = '/' . trim($path, '/');   // normalizar: siempre /algo o /
+$path   = '/' . trim(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), '/');
 $method = $_SERVER['REQUEST_METHOD'];
 $input  = json_decode(file_get_contents("php://input"), true) ?? [];
 
-// ─── LOGIN ──────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════
+// APP LOGIN
+// ════════════════════════════════════════════════════════════════
+
 if ($path === '/login' && $method === 'POST') {
     $stmt = $pdo->prepare("SELECT id, nombre FROM usuarios WHERE nombre=? AND password=?");
     $stmt->execute([$input['nombre'] ?? '', $input['password'] ?? '']);
@@ -23,7 +21,6 @@ if ($path === '/login' && $method === 'POST') {
     exit;
 }
 
-// ─── REGISTER ───────────────────────────────────────────────────
 if ($path === '/register' && $method === 'POST') {
     $nombre   = trim($input['nombre']   ?? '');
     $password = trim($input['password'] ?? '');
@@ -41,14 +38,12 @@ if ($path === '/register' && $method === 'POST') {
     exit;
 }
 
-// ─── GET USERS ──────────────────────────────────────────────────
 if ($path === '/users' && $method === 'GET') {
     $res = $pdo->query("SELECT id, nombre FROM usuarios ORDER BY nombre ASC");
     echo json_encode($res->fetchAll());
     exit;
 }
 
-// ─── VERIFY ADMIN ───────────────────────────────────────────────
 if ($path === '/verify-admin' && $method === 'POST') {
     $stmt = $pdo->prepare("SELECT id FROM usuarios WHERE nombre='Admin' AND password=?");
     $stmt->execute([$input['password'] ?? '']);
@@ -56,7 +51,6 @@ if ($path === '/verify-admin' && $method === 'POST') {
     exit;
 }
 
-// ─── VER INFO USUARIO (admin) ───────────────────────────────────
 if ($path === '/admin/user-info' && $method === 'POST') {
     $stmt = $pdo->prepare("SELECT nombre, password FROM usuarios WHERE id=?");
     $stmt->execute([$input['id'] ?? '']);
@@ -64,14 +58,12 @@ if ($path === '/admin/user-info' && $method === 'POST') {
     exit;
 }
 
-// ─── DELETE USER (admin) ────────────────────────────────────────
 if ($path === '/admin/delete-user' && $method === 'POST') {
     $pdo->prepare("DELETE FROM usuarios WHERE id=?")->execute([$input['id'] ?? '']);
     echo json_encode(['ok' => true]);
     exit;
 }
 
-// ─── CAMBIAR NOMBRE ─────────────────────────────────────────────
 if ($path === '/change-name' && $method === 'POST') {
     $id    = $input['id']       ?? '';
     $pass  = $input['password'] ?? '';
@@ -91,7 +83,6 @@ if ($path === '/change-name' && $method === 'POST') {
     exit;
 }
 
-// ─── CAMBIAR CONTRASEÑA ─────────────────────────────────────────
 if ($path === '/change-password' && $method === 'POST') {
     $id     = $input['id']              ?? '';
     $actual = $input['password_actual'] ?? '';
@@ -106,12 +97,56 @@ if ($path === '/change-password' && $method === 'POST') {
     exit;
 }
 
-// ─── ROOT — ping de salud ────────────────────────────────────────
-if ($path === '/' || $path === '') {
-    echo json_encode(['status' => 'ok', 'api' => 'AppLogin']);
+// ════════════════════════════════════════════════════════════════
+// APP PERSONAS
+// ════════════════════════════════════════════════════════════════
+
+if ($path === '/personas' && $method === 'GET') {
+    $res = $pdo->query("SELECT id, nombre, edad FROM personas ORDER BY id DESC");
+    echo json_encode($res->fetchAll());
     exit;
 }
 
-// ─── 404 ────────────────────────────────────────────────────────
+if ($path === '/personas' && $method === 'POST') {
+    $nombre = trim($input['nombre'] ?? '');
+    $edad   = intval($input['edad'] ?? 0);
+    if ($nombre === '' || $edad <= 0) {
+        echo json_encode(['ok' => false, 'error' => 'datos_invalidos']); exit;
+    }
+    $stmt = $pdo->prepare("INSERT INTO personas (nombre, edad) VALUES (?, ?)");
+    $stmt->execute([$nombre, $edad]);
+    echo json_encode(['ok' => true, 'id' => $pdo->lastInsertId()]);
+    exit;
+}
+
+if ($path === '/personas/editar' && $method === 'POST') {
+    $id     = intval($input['id']     ?? 0);
+    $nombre = trim($input['nombre']   ?? '');
+    $edad   = intval($input['edad']   ?? 0);
+    if ($id <= 0 || $nombre === '' || $edad <= 0) {
+        echo json_encode(['ok' => false, 'error' => 'datos_invalidos']); exit;
+    }
+    $pdo->prepare("UPDATE personas SET nombre=?, edad=? WHERE id=?")->execute([$nombre, $edad, $id]);
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+if ($path === '/personas/borrar' && $method === 'POST') {
+    $id = intval($input['id'] ?? 0);
+    if ($id <= 0) { echo json_encode(['ok' => false, 'error' => 'id_invalido']); exit; }
+    $pdo->prepare("DELETE FROM personas WHERE id=?")->execute([$id]);
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+// ════════════════════════════════════════════════════════════════
+// RAÍZ
+// ════════════════════════════════════════════════════════════════
+
+if ($path === '/' || $path === '') {
+    echo json_encode(['status' => 'ok', 'api' => 'AppLogin + Personas']);
+    exit;
+}
+
 http_response_code(404);
 echo json_encode(['error' => 'ruta_no_encontrada', 'path' => $path]);
