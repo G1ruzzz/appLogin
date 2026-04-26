@@ -140,11 +140,64 @@ if ($path === '/personas/borrar' && $method === 'POST') {
 }
 
 // ════════════════════════════════════════════════════════════════
+// APP NOTAS COMPARTIDAS
+// ════════════════════════════════════════════════════════════════
+
+// GET /notas — listar todas
+if ($path === '/notas' && $method === 'GET') {
+    $since = intval($_GET['since'] ?? 0);
+    if ($since > 0) {
+        $stmt = $pdo->prepare("SELECT id, texto, UNIX_TIMESTAMP(editado_en) as ts FROM notas WHERE UNIX_TIMESTAMP(editado_en) > ? ORDER BY id DESC");
+        $stmt->execute([$since]);
+    } else {
+        $stmt = $pdo->query("SELECT id, texto, UNIX_TIMESTAMP(editado_en) as ts FROM notas ORDER BY id DESC");
+    }
+    echo json_encode($stmt->fetchAll());
+    exit;
+}
+
+// POST /notas — guardar nueva
+if ($path === '/notas' && $method === 'POST') {
+    $texto = trim($input['texto'] ?? '');
+    if ($texto === '') {
+        echo json_encode(['ok' => false, 'error' => 'texto_vacio']); exit;
+    }
+    $stmt = $pdo->prepare("INSERT INTO notas (texto) VALUES (?)");
+    $stmt->execute([$texto]);
+    $id = $pdo->lastInsertId();
+    $row = $pdo->query("SELECT id, texto, UNIX_TIMESTAMP(editado_en) as ts FROM notas WHERE id=$id")->fetch();
+    echo json_encode(['ok' => true, 'nota' => $row]);
+    exit;
+}
+
+// POST /notas/editar
+if ($path === '/notas/editar' && $method === 'POST') {
+    $id    = intval($input['id']    ?? 0);
+    $texto = trim($input['texto']   ?? '');
+    if ($id <= 0 || $texto === '') {
+        echo json_encode(['ok' => false, 'error' => 'datos_invalidos']); exit;
+    }
+    $pdo->prepare("UPDATE notas SET texto=? WHERE id=?")->execute([$texto, $id]);
+    $row = $pdo->query("SELECT id, texto, UNIX_TIMESTAMP(editado_en) as ts FROM notas WHERE id=$id")->fetch();
+    echo json_encode(['ok' => true, 'nota' => $row]);
+    exit;
+}
+
+// POST /notas/borrar
+if ($path === '/notas/borrar' && $method === 'POST') {
+    $id = intval($input['id'] ?? 0);
+    if ($id <= 0) { echo json_encode(['ok' => false]); exit; }
+    $pdo->prepare("DELETE FROM notas WHERE id=?")->execute([$id]);
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+// ════════════════════════════════════════════════════════════════
 // RAÍZ
 // ════════════════════════════════════════════════════════════════
 
 if ($path === '/' || $path === '') {
-    echo json_encode(['status' => 'ok', 'api' => 'AppLogin + Personas']);
+    echo json_encode(['status' => 'ok', 'api' => 'AppLogin + Personas + Notas']);
     exit;
 }
 
